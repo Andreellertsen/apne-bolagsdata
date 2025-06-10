@@ -5,7 +5,7 @@ on:
     - cron:  '0 1 * * 1' # 1AM every Monday
 jobs:
   scrape:
-    name: Fetch the register
+    name: Update the data
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

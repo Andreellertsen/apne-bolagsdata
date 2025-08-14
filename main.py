@@ -1,7 +1,9 @@
 import pandas as pd
-from datasets import Dataset, DatasetDict
-from huggingface_hub import login
+import duckdb
 
+# ----------------------------------------------------
+# 1. Last ned og les SCB-data
+# ----------------------------------------------------
 print("Downloading SCB's data...")
 scb_data = pd.read_csv(
     "https://vardefulla-datamangder.bolagsverket.se/scb/scb_bulkfil.zip",
@@ -11,6 +13,9 @@ scb_data = pd.read_csv(
     compression="zip",
 )
 
+# ----------------------------------------------------
+# 2. Last ned og les Bolagsverket-data
+# ----------------------------------------------------
 print("Downloading Bolagsverket's data...")
 bv_data = pd.read_csv(
     "https://vardefulla-datamangder.bolagsverket.se/bolagsverket/bolagsverket_bulkfil.zip",
@@ -23,30 +28,22 @@ bv_data = pd.read_csv(
     compression="zip",
 )
 
-# Remove sole traders and personal data
+# ----------------------------------------------------
+# 3. Rens SCB-data
+# ----------------------------------------------------
+# Fjern personnummer (enskild firma) og c/o-adresse
 scb_data = scb_data[scb_data["PeOrgNr"] < 190000000000]
 scb_data.drop("COAdress", axis=1, inplace=True)
 
-# Add a column to filter sole traders (enskilda firmor)
-# This is unnecessary since we remove them
-# scb_data["enskildfirma"] = scb_data["PeOrgNr"] > 190000000000
-
-# Remove sole traders
+# ----------------------------------------------------
+# 4. Rens Bolagsverket-data
+# ----------------------------------------------------
+# Fjern person-IDORGer
 bv_data = bv_data[
     ~bv_data["organisationsidentitet"].str.contains("\\$PERSON-IDORG", regex=True)
 ]
 
-# Add a column to filter sole traders (enskilda firmor)
-# This is unnecessary since we remove them
-# bv_data["enskildfirma"] = bv_data["organisationsidentitet"].str.contains(
-#     "\\$PERSON-IDORG", regex=True
-# )
-# bv_data["organisationsidentitet"] = bv_data["organisationsidentitet"].str.replace(
-#     "$PERSON-IDORG", ""
-# )
-
-
-# Clean columns
+# Fjern tekniske markører fra kolonnene
 bv_data["organisationsidentitet"] = bv_data["organisationsidentitet"].str.replace(
     "$ORGNR-IDORG", ""
 )
@@ -60,17 +57,18 @@ bv_data["postadress"] = (
     .str.replace("$", "\n")
 )
 
-print("Converting to datasets...")
-scb_dataset = Dataset.from_pandas(scb_data)
-bv_dataset = Dataset.from_pandas(bv_data)
+# ----------------------------------------------------
+# 5. Lagre til DuckDB
+# ----------------------------------------------------
+print("Saving to DuckDB...")
+con = duckdb.connect("bolagsdata.duckdb")  # Lager/åpner databasefil
 
-print("Uploading to HuggingFace...")
-scb_dataset.push_to_hub(
-    commit_message="Update the data", repo_id="PierreMesure/oppna-bolagsdata-scb"
-)
-bv_dataset.push_to_hub(
-    commit_message="Update the data",
-    repo_id="PierreMesure/oppna-bolagsdata-bolagsverket",
-)
+# Lag tabeller
+con.execute("CREATE OR REPLACE TABLE scb AS SELECT * FROM scb_data")
+con.execute("CREATE OR REPLACE TABLE bolagsverket AS SELECT * FROM bv_data")
 
-print("Done!")
+# Bekreft lagring
+print("Data saved to 'bolagsdata.duckdb'")
+print("Tables in DB:", con.execute("SHOW TABLES").fetchall())
+
+con.close()

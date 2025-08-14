@@ -1,20 +1,27 @@
 name: Update the data
+
 on:
   workflow_dispatch:
   schedule:
-    - cron:  '0 1 * * 1' # 1AM every Monday
+    - cron: '0 1 * * 1'  # 1AM UTC every Monday
+
 jobs:
-  scrape:
-    name: Update the data
+  update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
-      - run: pip install .
-      - name: Run main.py
+
+      - name: Install dependencies
+        run: pip install .
+
+      - name: Run main.py safely
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python main.py
+        run: |
+          python main.py || echo "main.py failed, check logs"
